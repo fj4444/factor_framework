@@ -17,7 +17,8 @@ f=factor()
 print(f.available_data())
          
 #params={'ic_return_horizons': [5,20,60], 'ic_delay_periods': [1,2,5], 'ir_details': True}
-params={'ir_details': True, 'n_groups':3, 'quantile':0.3}
+params={'ir_details': True, 'n_group':3, 'quantile':0.3}
+# params={'ir_details': True, 'n_group':10}
 factor_property={'universe':'top75pct','benchmark': 'cs500'}
 #params={}
 

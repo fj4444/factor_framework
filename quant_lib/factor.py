@@ -183,6 +183,11 @@ class factor():
 
 
     def calc_factor_returns(self):
+        print(f"DEBUG: n_group is set to {self.params['n_group']}") 
+        factors = self.factor_data.shift(self.params['lag_periods'])
+        ranking = factors.rank(axis=1, pct=True)
+        n_bins=self.params['n_group']
+
         factors = self.factor_data.shift(self.params['lag_periods'])
         ranking = factors.rank(axis=1, pct=True)
         n_bins=self.params['n_group']
@@ -191,11 +196,21 @@ class factor():
             nd = self.returns.shape[0]
             grp_names=[('group%d' % i) for i in range(1,n_bins+1)]
             self.results['group_returns']=pd.DataFrame(np.full((nd,n_bins),np.nan),index=factors.index,columns=grp_names)
-            for i in range(n_bins):
-                l,u=i/n_bins,(i+1)/n_bins
-                rets=self.returns[((ranking<u) & (ranking>l))]
-                self.results['group_returns'].iloc[:,i]=rets.mean(axis=1)  
-            self.results['group_returns']=self.results['group_returns'].sub(self.results['group_returns'].mean(axis=1),axis=0)
+            
+            if n_bins == 3:
+                # 0-30% (Bottom), 30-70% (Middle), 70-100% (Top)
+                cutoffs = [(0.0, 0.3), (0.3, 0.7), (0.7, 1.0)]
+                for i in range(n_bins):
+                    l, u = cutoffs[i]
+                    # 注意: 原代码中的判断是 (ranking < u) & (ranking > l)，这里也沿用此逻辑。
+                    rets=self.returns[((ranking<=u) & (ranking>l))] # 使用 <=u 确保覆盖所有范围
+                    self.results['group_returns'].iloc[:,i]=rets.mean(axis=1)  
+            else:
+                for i in range(n_bins):
+                    l,u=i/n_bins,(i+1)/n_bins
+                    rets=self.returns[((ranking<u) & (ranking>l))]
+                    self.results['group_returns'].iloc[:,i]=rets.mean(axis=1)  
+                self.results['group_returns']=self.results['group_returns'].sub(self.results['group_returns'].mean(axis=1),axis=0)
 
         top_qt = ranking<qt
         bot_qt = ranking>1-qt
@@ -239,6 +254,20 @@ class factor():
         net_nav=(1+self.results['ls_net_returns']).cumprod()
         drawdown=net_nav/net_nav.cummax()-1
         self.results['Maximum Net Drawdown']=-drawdown.min()
+
+        # --- 新增代码：计算并存储每日回报率和标准差 ---
+        # Top Group/Long Position 
+        self.results['Long_Daily_Return'] = self.bot_returns.mean()
+        self.results['Long_Daily_Std'] = self.bot_returns.std()
+        
+        # Bottom Group/Short Position 
+        self.results['Short_Daily_Return'] = self.top_returns.mean()
+        self.results['Short_Daily_Std'] = self.top_returns.std()
+        
+        # LS Portfolio 
+        self.results['LS_Daily_Return'] = self.results['ls_returns'].mean()
+        self.results['LS_Daily_Std'] = self.results['ls_returns'].std()
+        # ----------------------------------------------------
 
         if self.params['benchmark'] is not None:
             self.results['Annualized Ex Return']=self.params['n_trading_days']*self.results['ex_returns'].mean()
@@ -409,6 +438,28 @@ class factor():
         print('%-18s%15s%11s%-22s%15s' % ('Smoothing Periods',smooth_periods,' ','Sector Neutral',self.params['sector_neutral']))
     
         print('%s' % '-'*82)
+
+        ann_coeff = np.sqrt(self.params['n_trading_days'])
+        
+        # Top 30% (Long Group) 的年度回报和IR（为显示完整性而计算）
+        ann_ret_long = self.params['n_trading_days']*self.results['Long_Daily_Return']
+        ann_ir_long = ann_ret_long / (self.results['Long_Daily_Std'] * ann_coeff)
+        
+        # Bottom 30% (Short Group) 的年度回报和IR
+        ann_ret_short = self.params['n_trading_days']*self.results['Short_Daily_Return']
+        ann_ir_short = ann_ret_short / (self.results['Short_Daily_Std'] * ann_coeff)
+        
+        print('%s' % '='*82)
+        print('Group Daily Performance')
+        print('%-21s %12s %12s %12s %12s' % ('Group','Daily Ret','Daily Std','Ann. Ret','Ann. IR'))
+        
+        print('%-21s %12.6f' % ('Top/Long Group', self.results['Long_Daily_Return']))
+        print('%-21s %12.6f' % ('Bottom/Short Group', self.results['Short_Daily_Return']))
+        print('%-21s %12.6f %12.6f %12.4f %12.4f' % ('LS Portfolio', self.results['LS_Daily_Return'], self.results['LS_Daily_Std'], self.results['Annualized Return'], self.results['Annualized IR']))
+
+        print('%s' % '-'*82)
+
+
         print('%-21s %8.4f %9s %-28s %8.4f' % ('Annualized Return',self.results['Annualized Return'],' ','Annualized Net Rerturn',self.results['Annualized Net Return']))
         print('%-21s %8.4f %9s %-28s %8.4f'  % ('Annualized IR',self.results['Annualized IR'],' ','Annualized Net IR',self.results['Annualized Net IR']))
         print('%-21s %8.4f %9s %-28s %8.4f'  % ('Maximum Drawdown',self.results['Maximum Drawdown'],' ','Maximum Net Drawdown',self.results['Maximum Net Drawdown']))
